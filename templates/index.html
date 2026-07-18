@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Desk — Paper Trader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <header class="top">
+    <div>
+      <p class="eyebrow">Paper · Luno · Hybrid</p>
+      <h1>Agent Desk</h1>
+    </div>
+    <div class="top-meta">
+      <span id="mode" class="pill">PAPER</span>
+      <span id="status" class="pill muted">loading</span>
+      <span id="clock" class="clock">—</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero-strip">
+      <div>
+        <p class="label">Equity</p>
+        <p id="equity" class="mega">—</p>
+        <p id="equity-sub" class="sub">—</p>
+      </div>
+      <div>
+        <p class="label">PnL</p>
+        <p id="pnl" class="mega">—</p>
+        <p id="pnl-sub" class="sub">since start</p>
+      </div>
+      <div>
+        <p class="label">News</p>
+        <p id="news" class="mega">—</p>
+        <p class="sub">sentiment −1 → +1</p>
+      </div>
+      <div>
+        <p class="label">Risk</p>
+        <p id="risk" class="mega">—</p>
+        <p id="risk-sub" class="sub">leverage · trades</p>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel wide">
+        <div class="panel-head">
+          <h2>Performance</h2>
+          <span id="stats-badge" class="pill muted">paper</span>
+        </div>
+        <div id="stats" class="empty">Loading stats…</div>
+      </div>
+
+      <div class="panel wide">
+        <div class="panel-head">
+          <h2>Luno wallet</h2>
+          <span id="wallet-status" class="pill muted">—</span>
+        </div>
+        <div id="wallet" class="empty">Loading wallet…</div>
+      </div>
+
+      <div class="panel wide">
+        <div class="panel-head">
+          <h2>Price charts (15m)</h2>
+          <span class="pill muted">last ~15h</span>
+        </div>
+        <div id="charts" class="chart-grid"><p class="empty">Loading charts…</p></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Live signals</h2>
+          <button id="refresh" type="button">Refresh</button>
+        </div>
+        <div id="signals" class="signal-list"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Paper positions</h2></div>
+        <div id="positions" class="empty">No open positions</div>
+      </div>
+
+      <div class="panel wide">
+        <div class="panel-head">
+          <h2>Headlines feeding the filter</h2>
+          <span id="news-status" class="pill muted">—</span>
+        </div>
+        <div id="news-coins" class="sub" style="margin-bottom:0.6rem"></div>
+        <ul id="headlines" class="headlines"></ul>
+      </div>
+
+      <div class="panel wide">
+        <div class="panel-head"><h2>Recent paper trades</h2></div>
+        <div id="trades" class="empty">No trades yet</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Auto-refresh every 20s · Local only · Not financial advice</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

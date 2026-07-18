@@ -1,0 +1,77 @@
+# Paper trading agent — R2,500 on Luno ZAR pairs (simulated fills)
+
+capital:
+  starting_zar: 2500
+  base_currency: ZAR
+
+trading:
+  exchange: luno
+  symbols:
+    - XBTZAR
+    - ETHZAR
+    - XRPZAR
+    - SOLZAR
+  interval: 15m
+  loop_seconds: 120
+
+leverage:
+  enabled: false          # Luno is spot-only — paper matches that
+  max: 1
+  default: 1
+
+fees:
+  taker_pct: 0.001        # ~0.10% per side (approx Luno maker/taker band)
+
+execution:
+  use_live_spread: true   # paper buys at Luno ask and sells at Luno bid
+  slippage_bps: 5         # additional 0.05% adverse movement per fill
+  max_spread_bps: 35      # reject new trades when live spread exceeds 0.35%
+  assumed_spread_bps: 10  # synthetic half-spread for backtests (total 10 bps)
+
+risk:
+  max_position_pct: 0.20  # max 20% of equity per position (more pairs, smaller slices)
+  stop_loss_pct: 0.015    # tighter stop for 15m timeframe
+  take_profit_pct: 0.03
+  max_daily_loss_pct: 0.10
+  max_open_positions: 3
+  min_order_zar: 50
+  min_reward_cost_multiple: 3.0  # expected TP reward must be >= 3x round-trip cost
+
+strategy:
+  ema_fast: 9
+  ema_slow: 21
+  rsi_period: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+  breakout_period: 20
+  news_block_threshold: -0.4
+  news_boost_threshold: 0.3
+  regime:
+    enabled: true
+    atr_period: 14
+    range_atr_mult: 0.8   # low vol / chop threshold
+    trend_ema_pct: 0.002  # min |fast-slow|/price for trend (0.2%)
+
+news:
+  feeds:
+    - https://www.coindesk.com/arc/outboundfeeds/rss/
+    - https://cointelegraph.com/rss
+    - https://decrypt.co/feed
+    - https://www.theblock.co/rss.xml
+    - https://bitcoinmagazine.com/.rss/full/
+    - https://feeds.bbci.co.uk/news/business/rss.xml
+    - https://news.google.com/rss/search?q=bitcoin+OR+ethereum+OR+crypto&hl=en-US&gl=US&ceid=US:en
+    - https://news.google.com/rss/search?q=federal+reserve+OR+interest+rates+OR+inflation&hl=en-US&gl=US&ceid=US:en
+  scout:
+    interval_seconds: 300   # scout refresh cadence (24/7)
+    cache_max_age_min: 15   # trading agent uses cache if fresher than this
+    half_life_hours: 6      # recency weighting for headline scores
+    max_per_feed: 20
+
+paths:
+  state_file: data/portfolio.json
+  trades_log: data/trades.jsonl
+  equity_log: data/equity.jsonl
+  backtest_report: data/backtest_last.json
+  news_cache: data/news_cache.json
+  news_log: data/news_log.jsonl
