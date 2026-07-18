@@ -93,6 +93,31 @@ def classify_regime(
     )
 
 
+def htf_trend_up(
+    candles: list[Candle],
+    bucket_seconds: int,
+    ema_fast: int = 9,
+    ema_slow: int = 21,
+) -> bool:
+    """Higher-timeframe trend check: EMA fast > slow on candles bucketed to bucket_seconds.
+
+    Works on native HTF candles (each lands in its own bucket) or on a lower-timeframe
+    series that gets aggregated. Permissive when there isn't enough HTF history to judge.
+    """
+    if not candles:
+        return True
+    bucket_ms = bucket_seconds * 1000
+    close_by_bucket: dict[int, float] = {}
+    for c in candles:
+        close_by_bucket[c.open_time // bucket_ms] = c.close
+    closes = [close_by_bucket[k] for k in sorted(close_by_bucket)]
+    if len(closes) < ema_slow + 2:
+        return True
+    fast = ema(closes, ema_fast)
+    slow = ema(closes, ema_slow)
+    return fast[-1] > slow[-1]
+
+
 def allows_new_long(regime: Regime, enabled: bool = True) -> bool:
     if not enabled:
         return True

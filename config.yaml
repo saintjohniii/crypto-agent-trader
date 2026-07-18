@@ -10,8 +10,9 @@ trading:
     - XBTZAR
     - ETHZAR
     - XRPZAR
-    - SOLZAR
-  interval: 15m
+    # SOLZAR dropped 2026-07-18: worst PF (0.17-0.32) in every tested config and ~2/3 of
+    # all losses while its own market fell least — strategy overtrades its volatility
+  interval: 1h
   loop_seconds: 120
 
 leverage:
@@ -30,12 +31,20 @@ execution:
 
 risk:
   max_position_pct: 0.20  # max 20% of equity per position (more pairs, smaller slices)
-  stop_loss_pct: 0.015    # tighter stop for 15m timeframe
+  stop_loss_pct: 0.015    # fallback when ATR stops disabled/unavailable
   take_profit_pct: 0.03
+  atr_stops:
+    enabled: true         # scale SL/TP to each pair's volatility
+    stop_mult: 2.0        # stop = 2 x ATR
+    tp_mult: 4.0          # TP = 4 x ATR (keeps 2:1 bracket)
+    min_stop_pct: 0.008
+    max_stop_pct: 0.04
+  risk_per_trade_pct: 0.01  # size so a stop-out costs ~1% of equity (capped by max_position_pct)
   max_daily_loss_pct: 0.10
   max_open_positions: 3
   min_order_zar: 50
   min_reward_cost_multiple: 3.0  # expected TP reward must be >= 3x round-trip cost
+  signal_exit_only_in_profit: true  # bearish-cross exits only lock in gains; stop-loss handles losers
 
 strategy:
   ema_fast: 9
@@ -46,6 +55,15 @@ strategy:
   breakout_period: 20
   news_block_threshold: -0.4
   news_boost_threshold: 0.3
+  range_mode:
+    enabled: false        # mean-reversion longs in RANGE regime — tested 2026-07: the setup
+    rsi_max: 32           # (RANGE + oversold near prior low) never occurs; oversold-at-low
+    low_tolerance_pct: 0.03  # always classifies as TREND_DOWN under the current regime logic
+  htf_filter:
+    enabled: true         # new longs only when the higher-timeframe trend is up
+    interval: 4h
+    ema_fast: 9
+    ema_slow: 21
   regime:
     enabled: true
     atr_period: 14

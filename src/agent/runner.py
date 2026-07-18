@@ -6,13 +6,14 @@ from datetime import datetime, timezone
 
 from src.analytics.stats import log_equity
 from src.config import ROOT, load_config
+from src.data.luno import INTERVAL_SECONDS
 from src.data.market import fetch_klines, fetch_ticker, fetch_ticker_price
 from src.data.news import fetch_news_sentiment
 from src.execution.paper_broker import PaperBroker
 from src.execution.portfolio import load_portfolio, save_portfolio
 from src.risk.manager import RiskManager
 from src.strategy.hybrid import combine
-from src.strategy.regime import allows_new_long, classify_regime
+from src.strategy.regime import Regime, allows_new_long, classify_regime, htf_trend_up
 from src.strategy.technical import Signal, analyze
 
 
@@ -158,11 +159,47 @@ def run_once(verbose: bool = True) -> dict:
                 f"spread {spread_bps:.1f}bps | news {symbol_news.score:+.2f} | {decision.reason}"
             )
 
+        take_long = False
+        size_mult = decision.size_multiplier
         if decision.action == Signal.BUY:
             if not allows_new_long(regime.regime, regime_enabled):
                 if verbose:
                     print(f"    -> SKIP regime {regime.regime.value} blocks new long")
                 continue
+            take_long = True
+            htf_cfg = strat_cfg.get("htf_filter") or {}
+            if bool(htf_cfg.get("enabled", False)):
+                htf_interval = htf_cfg.get("interval", "4h")
+                try:
+                    htf_candles = fetch_klines(symbol, htf_interval, limit=80)
+                except Exception:
+                    htf_candles = []
+                if not htf_trend_up(
+                    htf_candles,
+                    INTERVAL_SECONDS.get(htf_interval, 14400),
+                    int(htf_cfg.get("ema_fast", 9)),
+                    int(htf_cfg.get("ema_slow", 21)),
+                ):
+                    if verbose:
+                        print(f"    -> SKIP {htf_interval} trend is down")
+                    continue
+        else:
+            range_cfg = strat_cfg.get("range_mode") or {}
+            if (
+                bool(range_cfg.get("enabled", False))
+                and decision.action == Signal.HOLD
+                and regime.regime == Regime.RANGE
+                and tech.rsi <= float(range_cfg.get("rsi_max", 32))
+                and tech.low_prior > 0
+                and price <= tech.low_prior * (1 + float(range_cfg.get("low_tolerance_pct", 0.005)))
+                and symbol_news.score > strat_cfg["news_block_threshold"]
+            ):
+                take_long = True
+                size_mult = 1.0
+                if verbose:
+                    print(f"    -> RANGE BUY setup (RSI {tech.rsi:.1f} at prior low)")
+
+        if take_long:
             max_spread = cfg.get("execution", {}).get("max_spread_bps", float("inf"))
             if spread_bps > max_spread:
                 if verbose:
@@ -171,8 +208,10 @@ def run_once(verbose: bool = True) -> dict:
                         f"{max_spread:.1f}bps limit"
                     )
                 continue
+            stop_pct, tp_pct = risk.stop_tp_pcts(regime.atr, price)
             plan = risk.plan_entry(
-                portfolio, symbol, equity, decision.size_multiplier, spread_bps
+                portfolio, symbol, equity, size_mult, spread_bps,
+                stop_pct, tp_pct,
             )
             if plan.approved:
                 broker.execute_signal(
@@ -182,8 +221,8 @@ def run_once(verbose: bool = True) -> dict:
                     price,
                     plan.notional_zar,
                     plan.leverage,
-                    risk.stop_loss_pct,
-                    risk.take_profit_pct,
+                    stop_pct,
+                    tp_pct,
                     asks[symbol],
                 )
                 if verbose:
@@ -195,6 +234,16 @@ def run_once(verbose: bool = True) -> dict:
                 print(f"    -> SKIP {plan.reason}")
 
         elif decision.action == Signal.SELL and symbol in portfolio.positions:
+            if cfg["risk"].get("signal_exit_only_in_profit", False):
+                _, _, est_pnl, _, _ = broker.estimate_close(
+                    portfolio.positions[symbol], price, bids.get(symbol)
+                )
+                if est_pnl <= 0:
+                    if verbose:
+                        print(
+                            f"    -> HOLD {symbol} (signal exit skipped at est PnL R{est_pnl:+.2f}; stop manages risk)"
+                        )
+                    continue
             fill = broker.execute_signal(
                 portfolio, symbol, Signal.SELL, price, 0, 1, 0, 0, bids[symbol]
             )

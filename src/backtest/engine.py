@@ -12,7 +12,7 @@ from src.execution.paper_broker import PaperBroker
 from src.execution.portfolio import Portfolio
 from src.risk.manager import RiskManager
 from src.strategy.hybrid import combine
-from src.strategy.regime import allows_new_long, classify_regime
+from src.strategy.regime import Regime, allows_new_long, classify_regime, htf_trend_up
 from src.strategy.technical import Signal, analyze
 
 
@@ -45,6 +45,11 @@ def run_backtest(days: int | None = None, bars: int | None = None) -> dict[str, 
     strat = cfg["strategy"]
     regime_cfg = strat.get("regime") or {}
     regime_enabled = bool(regime_cfg.get("enabled", True))
+    htf_cfg = strat.get("htf_filter") or {}
+    htf_enabled = bool(htf_cfg.get("enabled", False))
+    htf_seconds = INTERVAL_SECONDS.get(htf_cfg.get("interval", "4h"), 14400)
+    range_cfg = strat.get("range_mode") or {}
+    range_enabled = bool(range_cfg.get("enabled", False))
     warmup = max(strat["ema_slow"], strat["breakout_period"], regime_cfg.get("atr_period", 14)) + 5
 
     series: dict[str, list[Candle]] = {}
@@ -150,11 +155,35 @@ def run_backtest(days: int | None = None, bars: int | None = None) -> dict[str, 
             price = marks[sym]
             spread_bps = assumed_spread
 
+            take_long = False
+            size_mult = decision.size_multiplier
             if decision.action == Signal.BUY:
-                if not allows_new_long(regime.regime, regime_enabled):
-                    continue
+                take_long = allows_new_long(regime.regime, regime_enabled) and (
+                    not htf_enabled
+                    or htf_trend_up(
+                        window,
+                        htf_seconds,
+                        int(htf_cfg.get("ema_fast", 9)),
+                        int(htf_cfg.get("ema_slow", 21)),
+                    )
+                )
+            elif (
+                range_enabled
+                and decision.action == Signal.HOLD
+                and regime.regime == Regime.RANGE
+                and tech.rsi <= float(range_cfg.get("rsi_max", 32))
+                and tech.low_prior > 0
+                and price <= tech.low_prior * (1 + float(range_cfg.get("low_tolerance_pct", 0.005)))
+                and news.score > strat["news_block_threshold"]
+            ):
+                take_long = True
+                size_mult = 1.0
+
+            if take_long:
+                stop_pct, tp_pct = risk.stop_tp_pcts(regime.atr, price)
                 plan = risk.plan_entry(
-                    portfolio, sym, equity, decision.size_multiplier, spread_bps
+                    portfolio, sym, equity, size_mult, spread_bps,
+                    stop_pct, tp_pct,
                 )
                 if not plan.approved:
                     continue
@@ -165,14 +194,20 @@ def run_backtest(days: int | None = None, bars: int | None = None) -> dict[str, 
                     price,
                     plan.notional_zar,
                     plan.leverage,
-                    risk.stop_loss_pct,
-                    risk.take_profit_pct,
+                    stop_pct,
+                    tp_pct,
                     asks[sym],
                 )
                 if fill:
                     open_meta[sym] = {"bar": i}
 
             elif decision.action == Signal.SELL and sym in portfolio.positions:
+                if cfg["risk"].get("signal_exit_only_in_profit", False):
+                    _, _, est_pnl, _, _ = broker.estimate_close(
+                        portfolio.positions[sym], price, bids[sym]
+                    )
+                    if est_pnl <= 0:
+                        continue
                 fill = broker.execute_signal(
                     portfolio, sym, Signal.SELL, price, 0, 1, 0, 0, bids[sym]
                 )
@@ -228,6 +263,26 @@ def run_backtest(days: int | None = None, bars: int | None = None) -> dict[str, 
         else:
             b["gl"] += abs(t["pnl"])
 
+    by_reason: dict[str, dict[str, Any]] = {}
+    for t in closed:
+        r = by_reason.setdefault(
+            t["reason"], {"reason": t["reason"], "trades": 0, "wins": 0, "net_pnl": 0.0}
+        )
+        r["trades"] += 1
+        r["net_pnl"] += t["pnl"]
+        if t["pnl"] > 0:
+            r["wins"] += 1
+    per_reason = [
+        {
+            "reason": r["reason"],
+            "trades": r["trades"],
+            "wins": r["wins"],
+            "net_pnl": round(r["net_pnl"], 2),
+            "avg_pnl": round(r["net_pnl"] / r["trades"], 2) if r["trades"] else 0.0,
+        }
+        for r in sorted(by_reason.values(), key=lambda r: r["net_pnl"])
+    ]
+
     per_pair = []
     for sym, b in sorted(by_symbol.items()):
         pfx = (b["gp"] / b["gl"]) if b["gl"] > 0 else (float("inf") if b["gp"] > 0 else 0.0)
@@ -242,6 +297,21 @@ def run_backtest(days: int | None = None, bars: int | None = None) -> dict[str, 
                 "profit_factor_display": "∞" if pfx == float("inf") else round(pfx, 2),
             }
         )
+
+    # Buy & hold benchmark over the same window (entry at first tradable bar, incl. costs)
+    rt_cost_pct = risk.round_trip_cost_pct(assumed_spread)
+    bench_pairs = []
+    for sym in symbols:
+        start_p = series[sym][warmup].close
+        end_p = series[sym][-1].close
+        raw = (end_p / start_p - 1) * 100
+        bench_pairs.append(
+            {"symbol": sym, "return_pct": round(raw - rt_cost_pct * 100, 2)}
+        )
+    bench_equal_weight = round(
+        sum(b["return_pct"] for b in bench_pairs) / len(bench_pairs), 2
+    ) if bench_pairs else 0.0
+    strategy_return_pct = round((final_equity / starting - 1) * 100, 2)
 
     pass_bar = {
         "net_pnl_positive": net_pnl > 0,
@@ -269,6 +339,12 @@ def run_backtest(days: int | None = None, bars: int | None = None) -> dict[str, 
         "max_drawdown_pct": round(max_dd, 2),
         "assumed_spread_bps": assumed_spread,
         "per_pair": per_pair,
+        "per_reason": per_reason,
+        "benchmark": {
+            "strategy_return_pct": strategy_return_pct,
+            "equal_weight_hold_return_pct": bench_equal_weight,
+            "per_pair_hold": bench_pairs,
+        },
         "pass_bar": pass_bar,
         "regime_enabled": regime_enabled,
         "min_reward_cost_multiple": cfg["risk"].get("min_reward_cost_multiple", 3.0),
@@ -300,6 +376,22 @@ def print_report(report: dict[str, Any]) -> None:
             f"  {p['symbol']}: {p['trades']} trades | WR {p['win_rate']}% | "
             f"PF {p['profit_factor_display']} | PnL R{p['net_pnl']:+.2f}"
         )
+    bench = report.get("benchmark")
+    if bench:
+        holds = ", ".join(
+            f"{b['symbol']} {b['return_pct']:+.1f}%" for b in bench["per_pair_hold"]
+        )
+        print(
+            f"Benchmark: strategy {bench['strategy_return_pct']:+.2f}% vs "
+            f"equal-weight hold {bench['equal_weight_hold_return_pct']:+.2f}% ({holds})"
+        )
+    if report.get("per_reason"):
+        print("Per exit reason:")
+        for r in report["per_reason"]:
+            print(
+                f"  {r['reason']}: {r['trades']} trades | {r['wins']} wins | "
+                f"PnL R{r['net_pnl']:+.2f} (avg R{r['avg_pnl']:+.2f})"
+            )
     pb = report["pass_bar"]
     print(
         f"Pass bar: {'YES' if pb['all'] else 'NO'} "

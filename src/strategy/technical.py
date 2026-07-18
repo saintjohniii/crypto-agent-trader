@@ -20,6 +20,8 @@ class TechnicalSignal:
     ema_fast: float
     ema_slow: float
     price: float
+    high_prior: float = 0.0  # prior N-bar high/low (excludes current bar)
+    low_prior: float = 0.0
 
 
 def ema(values: list[float], period: int) -> list[float]:
@@ -63,8 +65,13 @@ def analyze(
     slow = ema(closes, ema_slow)
     rsi_val = rsi(closes, rsi_period)
 
-    high_20 = max(c.high for c in candles[-breakout_period:])
-    low_20 = min(c.low for c in candles[-breakout_period:])
+    # Breakout levels use the prior N bars, excluding the current one —
+    # otherwise price is always "at" its own high and every pop looks like a breakout
+    prior = candles[-breakout_period - 1 : -1] if len(candles) > breakout_period else candles[:-1]
+    if not prior:
+        prior = candles
+    high_20 = max(c.high for c in prior)
+    low_20 = min(c.low for c in prior)
 
     bullish_cross = fast[-2] <= slow[-2] and fast[-1] > slow[-1]
     bearish_cross = fast[-2] >= slow[-2] and fast[-1] < slow[-1]
@@ -79,6 +86,8 @@ def analyze(
             ema_fast=fast[-1],
             ema_slow=slow[-1],
             price=price,
+            high_prior=high_20,
+            low_prior=low_20,
         )
 
     if (bullish_cross or breakout_up) and rsi_val < rsi_overbought:
@@ -89,6 +98,8 @@ def analyze(
             ema_fast=fast[-1],
             ema_slow=slow[-1],
             price=price,
+            high_prior=high_20,
+            low_prior=low_20,
         )
 
     if rsi_val < rsi_oversold and fast[-1] > slow[-1]:
@@ -99,6 +110,8 @@ def analyze(
             ema_fast=fast[-1],
             ema_slow=slow[-1],
             price=price,
+            high_prior=high_20,
+            low_prior=low_20,
         )
 
     return TechnicalSignal(

@@ -32,6 +32,22 @@ class RiskManager:
         self.taker_pct = float(fees_cfg.get("taker_pct", 0.001))
         self.slippage_pct = float(execution_cfg.get("slippage_bps", 0)) / 10_000
 
+        atr_cfg = risk_cfg.get("atr_stops") or {}
+        self.atr_enabled = bool(atr_cfg.get("enabled", False))
+        self.atr_stop_mult = float(atr_cfg.get("stop_mult", 2.0))
+        self.atr_tp_mult = float(atr_cfg.get("tp_mult", 4.0))
+        self.atr_min_stop = float(atr_cfg.get("min_stop_pct", 0.008))
+        self.atr_max_stop = float(atr_cfg.get("max_stop_pct", 0.04))
+        self.risk_per_trade_pct = float(risk_cfg.get("risk_per_trade_pct", 0) or 0)
+
+    def stop_tp_pcts(self, atr: float, price: float) -> tuple[float, float]:
+        """SL/TP fractions for this entry — ATR-scaled when enabled, else static config."""
+        if not self.atr_enabled or atr <= 0 or price <= 0:
+            return self.stop_loss_pct, self.take_profit_pct
+        stop = min(self.atr_max_stop, max(self.atr_min_stop, self.atr_stop_mult * atr / price))
+        tp = stop * (self.atr_tp_mult / self.atr_stop_mult)
+        return stop, tp
+
     def reset_daily_if_needed(self, portfolio: Portfolio) -> None:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if portfolio.daily_reset_date != today:
@@ -60,7 +76,11 @@ class RiskManager:
         equity_zar: float,
         size_multiplier: float,
         spread_bps: float = 0.0,
+        stop_pct: float | None = None,
+        tp_pct: float | None = None,
     ) -> OrderPlan:
+        stop_pct = stop_pct if stop_pct else self.stop_loss_pct
+        tp_pct = tp_pct if tp_pct else self.take_profit_pct
         if self.check_halt(portfolio):
             return OrderPlan(False, 0, 1, "daily loss limit — trading halted")
 
@@ -74,7 +94,12 @@ class RiskManager:
         if self.leverage_enabled:
             leverage = min(self.max_leverage, max(1.0, self.default_leverage))
 
-        base_notional = equity_zar * self.max_position_pct * size_multiplier
+        cap_notional = equity_zar * self.max_position_pct
+        if self.risk_per_trade_pct > 0 and stop_pct > 0:
+            base_notional = min(cap_notional, equity_zar * self.risk_per_trade_pct / stop_pct)
+        else:
+            base_notional = cap_notional
+        base_notional *= size_multiplier
         notional = max(self.min_order_zar, base_notional * leverage)
 
         margin_required = notional / leverage
@@ -86,7 +111,7 @@ class RiskManager:
             return OrderPlan(False, 0, leverage, "insufficient capital for min order")
 
         cost_pct = self.round_trip_cost_pct(spread_bps)
-        expected_reward = self.take_profit_pct * notional
+        expected_reward = tp_pct * notional
         round_trip_cost = cost_pct * notional
         if round_trip_cost > 0:
             multiple = expected_reward / round_trip_cost
@@ -98,7 +123,7 @@ class RiskManager:
                     (
                         f"reward/cost {multiple:.2f}x < "
                         f"{self.min_reward_cost_multiple:.1f}x "
-                        f"(TP {self.take_profit_pct*100:.1f}% vs cost {cost_pct*100:.2f}%)"
+                        f"(TP {tp_pct*100:.1f}% vs cost {cost_pct*100:.2f}%)"
                     ),
                 )
 
