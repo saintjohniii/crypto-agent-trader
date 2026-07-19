@@ -50,7 +50,12 @@ def build_snapshot() -> dict:
     signals: list[dict] = []
     news = fetch_news_sentiment(cfg["news"]["feeds"])
 
-    for symbol in cfg["trading"]["symbols"]:
+    trade_syms = list(cfg["trading"]["symbols"])
+    watch_syms = [
+        s for s in (cfg["trading"].get("watch_symbols") or []) if s not in trade_syms
+    ]
+    for symbol in trade_syms + watch_syms:
+        is_watch = symbol in watch_syms
         try:
             ticker = fetch_ticker(symbol)
             price = ticker["last"]
@@ -97,6 +102,7 @@ def build_snapshot() -> dict:
                     "regime_reason": regime.reason,
                     "candles": len(candles),
                     "series": series,
+                    "watch": is_watch,
                 }
             )
         except Exception as exc:
@@ -111,6 +117,7 @@ def build_snapshot() -> dict:
                     "ema_slow": None,
                     "regime": None,
                     "candles": 0,
+                    "watch": is_watch,
                 }
             )
 

@@ -144,7 +144,7 @@ function renderCharts(signals, positions) {
       return `
       <div class="chart-card ${pos ? "held" : ""}">
         <div class="chart-head">
-          <span class="sym">${s.symbol}</span>
+          <span class="sym">${s.symbol}${s.watch ? ` <span class="pill muted">watch</span>` : ""}</span>
           <span class="${chg >= 0 ? "up" : "down"}">${chg >= 0 ? "+" : ""}${money(chg)}%</span>
         </div>
         <div class="chart-sub">R${priceFmt(last)}${pos ? ` · in position (entry R${priceFmt(pos.entry)})` : ""}</div>
@@ -225,7 +225,7 @@ function renderSignals(signals) {
       return `
       <article class="signal">
         <div>
-          <div class="sym">${s.symbol}</div>
+          <div class="sym">${s.symbol}${s.watch ? ` <span class="pill muted">watch</span>` : ""}</div>
           <div class="price">${s.price == null ? "—" : "R" + money(s.price)}</div>
           <div class="price regime">${regime}</div>
         </div>

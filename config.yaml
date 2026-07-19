@@ -10,8 +10,11 @@ trading:
     - XBTZAR
     - ETHZAR
     - XRPZAR
-    # SOLZAR dropped 2026-07-18: worst PF (0.17-0.32) in every tested config and ~2/3 of
-    # all losses while its own market fell least — strategy overtrades its volatility
+  watch_symbols:
+    # SOLZAR demoted to watch-only 2026-07-18: worst PF (0.17-0.32) in every tested config
+    # and ~2/3 of all losses while its own market fell least — strategy overtrades its
+    # volatility. Still analyzed and shown on the dashboard, but never traded.
+    - SOLZAR
   interval: 1h
   loop_seconds: 120
 

@@ -59,8 +59,13 @@ def run_once(verbose: bool = True) -> dict:
     regime_enabled = bool(regime_cfg.get("enabled", True))
 
     symbols = list(cfg["trading"]["symbols"])
+    watch_syms = [
+        s for s in (cfg["trading"].get("watch_symbols") or []) if s not in symbols
+    ]
     # Manage leftover positions on dropped pairs (stops/exits only)
-    manage_symbols = list(dict.fromkeys(symbols + list(portfolio.positions.keys())))
+    manage_symbols = list(
+        dict.fromkeys(symbols + watch_syms + list(portfolio.positions.keys()))
+    )
 
     prices: dict[str, float] = {}
     asks: dict[str, float] = {}
@@ -97,7 +102,8 @@ def run_once(verbose: bool = True) -> dict:
     equity = _equity_zar(portfolio, prices, broker, bids)
     results = []
 
-    for symbol in symbols:
+    for symbol in symbols + watch_syms:
+        is_watch = symbol in watch_syms
         candles = fetch_klines(symbol, cfg["trading"]["interval"], limit=100)
         tech = analyze(
             candles,
@@ -132,6 +138,7 @@ def run_once(verbose: bool = True) -> dict:
                     "signal": "ERROR",
                     "reason": "no ticker",
                     "regime": regime.regime.value,
+                    "watch": is_watch,
                 }
             )
             continue
@@ -149,19 +156,23 @@ def run_once(verbose: bool = True) -> dict:
             "spread_bps": spread_bps,
             "regime": regime.regime.value,
             "regime_reason": regime.reason,
+            "watch": is_watch,
         }
         results.append(row)
 
         if verbose:
+            watch_tag = " | WATCH-ONLY" if is_watch else ""
             print(
                 f"  {symbol} R{price:,.2f} | {decision.action.value} | "
                 f"{regime.regime.value} | RSI {tech.rsi:.1f} | "
-                f"spread {spread_bps:.1f}bps | news {symbol_news.score:+.2f} | {decision.reason}"
+                f"spread {spread_bps:.1f}bps | news {symbol_news.score:+.2f} | {decision.reason}{watch_tag}"
             )
 
         take_long = False
         size_mult = decision.size_multiplier
-        if decision.action == Signal.BUY:
+        if is_watch:
+            pass  # watch-only: never open positions; stops/exits still manage leftovers
+        elif decision.action == Signal.BUY:
             if not allows_new_long(regime.regime, regime_enabled):
                 if verbose:
                     print(f"    -> SKIP regime {regime.regime.value} blocks new long")
