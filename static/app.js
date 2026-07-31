@@ -231,7 +231,7 @@ function renderSignals(signals) {
         </div>
         <div>
           <div class="reason">${s.reason || ""}</div>
-          <div class="price" style="margin-top:0.45rem">RSI ${s.rsi ?? "—"} · spread ${s.spread_bps ?? "—"} bps · EMA ${s.ema_fast ?? "—"} / ${s.ema_slow ?? "—"}</div>
+          <div class="price" style="margin-top:0.45rem">RSI ${s.rsi ?? "—"} · spread ${s.spread_bps ?? "—"} bps · news ${s.news == null ? "—" : (s.news >= 0 ? "+" : "") + s.news} · EMA ${s.ema_fast ?? "—"} / ${s.ema_slow ?? "—"}</div>
         </div>
         <span class="tag ${tag}">${s.signal}</span>
       </article>`;

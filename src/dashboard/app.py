@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, render_template
@@ -71,8 +72,13 @@ def build_snapshot() -> dict:
                 strat["rsi_oversold"],
                 strat["breakout_period"],
             )
+            # Same per-symbol news score the loop decides on, not the global one
+            symbol_news = replace(news, score=news.score_for(symbol))
             decision = combine(
-                tech, news, strat["news_block_threshold"], strat["news_boost_threshold"]
+                tech,
+                symbol_news,
+                strat["news_block_threshold"],
+                strat["news_boost_threshold"],
             )
             regime = classify_regime(
                 candles,
@@ -103,6 +109,7 @@ def build_snapshot() -> dict:
                     "candles": len(candles),
                     "series": series,
                     "watch": is_watch,
+                    "news": round(symbol_news.score, 2),
                 }
             )
         except Exception as exc:
@@ -118,6 +125,7 @@ def build_snapshot() -> dict:
                     "regime": None,
                     "candles": 0,
                     "watch": is_watch,
+                    "news": None,
                 }
             )
 
