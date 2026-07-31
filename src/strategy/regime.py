@@ -118,7 +118,18 @@ def htf_trend_up(
     return fast[-1] > slow[-1]
 
 
-def allows_new_long(regime: Regime, enabled: bool = True) -> bool:
+def allows_new_long(
+    regime: Regime,
+    enabled: bool = True,
+    allowed: list[str] | None = None,
+) -> bool:
+    """Whether a new long may open in this regime.
+
+    `allowed` names the permitted regimes (e.g. ["TREND_UP", "RANGE"]); without
+    it the gate stays trend-only, which is the strictest setting.
+    """
     if not enabled:
         return True
+    if allowed:
+        return regime.value in allowed
     return regime == Regime.TREND_UP

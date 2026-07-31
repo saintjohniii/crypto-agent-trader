@@ -158,7 +158,9 @@ def run_backtest(days: int | None = None, bars: int | None = None) -> dict[str, 
             take_long = False
             size_mult = decision.size_multiplier
             if decision.action == Signal.BUY:
-                take_long = allows_new_long(regime.regime, regime_enabled) and (
+                take_long = allows_new_long(
+                    regime.regime, regime_enabled, regime_cfg.get("allow_regimes")
+                ) and (
                     not htf_enabled
                     or htf_trend_up(
                         window,

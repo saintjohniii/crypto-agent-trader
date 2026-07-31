@@ -173,7 +173,9 @@ def run_once(verbose: bool = True) -> dict:
         if is_watch:
             pass  # watch-only: never open positions; stops/exits still manage leftovers
         elif decision.action == Signal.BUY:
-            if not allows_new_long(regime.regime, regime_enabled):
+            if not allows_new_long(
+                regime.regime, regime_enabled, regime_cfg.get("allow_regimes")
+            ):
                 if verbose:
                     print(f"    -> SKIP regime {regime.regime.value} blocks new long")
                 continue

@@ -63,15 +63,22 @@ strategy:
     rsi_max: 32           # (RANGE + oversold near prior low) never occurs; oversold-at-low
     low_tolerance_pct: 0.03  # always classifies as TREND_DOWN under the current regime logic
   htf_filter:
-    enabled: true         # new longs only when the higher-timeframe trend is up
+    enabled: false        # off 2026-07-31: redundant with the TREND_UP regime gate and it
+                          # cost trades for nothing — removing it raised PF on both the 180d
+                          # (0.74 -> 0.89) and 90d windows. Flip to true to re-gate on 4h.
     interval: 4h
     ema_fast: 9
     ema_slow: 21
   regime:
     enabled: true
+    allow_regimes: [TREND_UP]  # regimes allowed to open new longs. Adding RANGE was measured
+                          # 2026-07-31 and is destructive: 166 vs 67 trades but PF 0.74 -> 0.63,
+                          # net -R87 -> -R304, drawdown 6% -> 15.6%. Chop breakouts are the losers.
     atr_period: 14
     range_atr_mult: 0.8   # low vol / chop threshold
-    trend_ema_pct: 0.002  # min |fast-slow|/price for trend (0.2%)
+    trend_ema_pct: 0.001  # min |fast-slow|/price for trend (0.1%). Loosened from 0.002 on
+                          # 2026-07-31 to trade more: +69% trades on 180d, PF and PnL improved
+                          # on both windows. Going lower (0.0005) or cutting chop filter degrades.
 
 news:
   feeds:
