@@ -129,9 +129,13 @@ def scout_once(cfg: dict | None = None, verbose: bool = False) -> dict[str, Any]
     per_coin: dict[str, dict[str, Any]] = {}
     for coin in COIN_KEYWORDS:
         rows = [r for r in items if coin in r["coins"]]
+        # Only non-zero rows drive the score, so that count is what callers must
+        # judge its reliability by — a coin can match 12 headlines but score off 2
+        scoring = [r for r in rows if r["score"] != 0]
         per_coin[coin] = {
             "score": round(_weighted(rows), 3) if rows else None,
             "headlines": len(rows),
+            "scoring_headlines": len(scoring),
         }
 
     movers = sorted(items, key=lambda r: (abs(r["score"]) * r["weight"]), reverse=True)

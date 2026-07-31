@@ -16,6 +16,9 @@ BEARISH = {
     "liquidation", "fraud", "bankrupt",
 }
 
+# Headlines needed before a coin score carries half its blend weight
+SCORE_SHRINK_K = 8.0
+
 
 @dataclass
 class NewsSentiment:
@@ -27,14 +30,26 @@ class NewsSentiment:
     age_min: float | None = None
 
     def score_for(self, symbol: str, blend: float = 0.5) -> float:
-        """Blend global score with coin-specific score when the scout has one."""
+        """Blend global score with coin-specific score when the scout has one.
+
+        Each headline scores exactly +/-1 unless it carries both bullish and
+        bearish words, and recency weighting decays by half every 6h, so a coin
+        with one or two fresh headlines pins at +/-1. The coin score's share of
+        the blend is therefore shrunk by n/(n+K) on the number of headlines that
+        actually carried a keyword: thin coins fall back to the global score,
+        well-sampled ones keep close to the full blend.
+        """
         if not self.per_coin:
             return self.score
         coin = symbol[:3]
         entry = self.per_coin.get(coin)
         if not entry or entry.get("score") is None:
             return self.score
-        return max(-1.0, min(1.0, (1 - blend) * self.score + blend * entry["score"]))
+        n = entry.get("scoring_headlines")
+        if n is None:  # caches written before scoring_headlines existed
+            n = entry.get("headlines", 0)
+        weight = blend * (n / (n + SCORE_SHRINK_K)) if n else 0.0
+        return max(-1.0, min(1.0, (1 - weight) * self.score + weight * entry["score"]))
 
 
 def _clean(text: str) -> str:
