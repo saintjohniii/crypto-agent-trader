@@ -9,12 +9,16 @@ trading:
   symbols:
     - XBTZAR
     - ETHZAR
-    - XRPZAR
   watch_symbols:
     # SOLZAR demoted to watch-only 2026-07-18: worst PF (0.17-0.32) in every tested config
     # and ~2/3 of all losses while its own market fell least — strategy overtrades its
     # volatility. Still analyzed and shown on the dashboard, but never traded.
     - SOLZAR
+    # XRPZAR demoted 2026-07-31: PF 0.49 and -R112 over 180d while XBT (+R25) and ETH (+R20)
+    # were both profitable. Caveat on record — its market also fell hardest (-33.7% vs -18%),
+    # so this is partly the market, and it is the second pair demoted for poor backtest
+    # results. Watch its watch-only signals before treating the improvement as real.
+    - XRPZAR
   interval: 1h
   loop_seconds: 120
 
